@@ -3,7 +3,7 @@ server:
 
 spring:
   application:
-    name: redis-admin-backend
+    name: redisVisual
   jackson:
     # 不设 default-property-inclusion: non_null（设计 §8.1）
     # 改为注解白名单口径：仅 ApiResponse / KeyDetailVO / KeyScanVO 三类 NON_NULL

@@ -2,19 +2,20 @@ package com.example.redisadmin.storage;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.boot.ApplicationArguments;
-import org.springframework.boot.ApplicationRunner;
-import org.springframework.core.annotation.Order;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 /**
  * 版本感知的 Schema 迁移。幂等只靠版本号（不依赖 CREATE INDEX IF NOT EXISTS 之类方言差异）。
- * <p>启动即执行：应用在无 Redis 可达时也照常启动。</p>
+ * <p><b>时序约束</b>：必须在 bean 创建期（refresh 内）完成建表——
+ * {@code @EnableScheduling} 的调度任务（如仪表盘 5s 采样）在 ContextRefreshedEvent 起即开始查表，
+ * 若放 ApplicationRunner（refresh 完成后才执行），空库上首个 tick 会撞 {@code no such table}。
+ * <p>启动即执行：应用在无 Redis 可达时也照常启动。
  */
 @Component
-@Order(1)
-public class SchemaInitializer implements ApplicationRunner {
+public class SchemaInitializer implements InitializingBean {
 
     private static final Logger log = LoggerFactory.getLogger(SchemaInitializer.class);
 
@@ -26,15 +27,18 @@ public class SchemaInitializer implements ApplicationRunner {
     private final JdbcTemplate jdbcTemplate;
     private final StorageDialect dialect;
     private final LegacyConnectionImporter importer;
+    private final ApplicationArguments args;
 
-    public SchemaInitializer(JdbcTemplate jdbcTemplate, StorageDialect dialect, LegacyConnectionImporter importer) {
+    public SchemaInitializer(JdbcTemplate jdbcTemplate, StorageDialect dialect,
+                             LegacyConnectionImporter importer, ApplicationArguments args) {
         this.jdbcTemplate = jdbcTemplate;
         this.dialect = dialect;
         this.importer = importer;
+        this.args = args;
     }
 
     @Override
-    public void run(ApplicationArguments args) {
+    public void afterPropertiesSet() {
         jdbcTemplate.execute(dialect.createSchemaVersionTableSql());
 
         int current = dialect.queryCurrentVersion();

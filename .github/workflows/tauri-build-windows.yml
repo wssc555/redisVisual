@@ -100,7 +100,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p frontend/src-tauri/resources
-          cp target/redis-admin-backend-*.jar frontend/src-tauri/resources/app.jar
+          cp target/redisVisual-*.jar frontend/src-tauri/resources/app.jar
           rm -rf frontend/src-tauri/resources/runtime
           cp -r jlink-runtime frontend/src-tauri/resources/runtime
           ls -la frontend/src-tauri/resources
