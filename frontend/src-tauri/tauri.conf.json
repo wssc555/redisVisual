@@ -7,7 +7,7 @@
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "pnpm dev",
-    "beforeBuildCommand": "node -e \"const fs=require('fs');if(!(fs.existsSync('dist/index.html')||fs.existsSync('../dist/index.html'))){console.error('frontend/dist 未就绪:先执行 pnpm build');process.exit(1)}console.log('frontend/dist 已就绪(CI 已预构建),跳过重复构建')\""
+    "beforeBuildCommand": "node scripts/ensure-dist.cjs"
   },
   "app": {
     "windows": [
