@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+coverage/
+
+# 整合规则：dist/ 不进后端 jar。随 jar 发布需手动拷 dist/* →
+# 后端 src/main/resources/static/（那边同样 gitignore）。
+src/main/resources/static/

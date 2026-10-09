@@ -1,0 +1,84 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: redis-admin-backend
+  jackson:
+    # 不设 default-property-inclusion: non_null（设计 §8.1）
+    # 改为注解白名单口径：仅 ApiResponse / KeyDetailVO / KeyScanVO 三类 NON_NULL
+    serialization:
+      write-dates-as-timestamps: false
+
+redis-admin:
+  storage:
+    # SQLITE（默认，零配置随应用走） / MYSQL / POSTGRES
+    type: SQLITE
+    # 留空则用 AppPaths 默认 <工作目录>/data/app.db
+    # 也可由 --app.db-path=/data/redis/app.db 或非选项参数指定
+    db-path:
+    # 非 SQLite 方言必填
+    url:
+    username:
+    password:
+
+  connection:
+    # 每 profile 最多懒建的 db 连接数（单机/哨兵）
+    max-connections-per-profile: 16
+    # LRU 缓存 profile 总数上限
+    max-cached-profiles: 10
+    # 缓存条目空闲驱逐（分钟）
+    expire-after-access-minutes: 30
+    # 心跳间隔（毫秒，整数值直接进 fixedRateString）
+    heartbeat-interval-ms: 60000
+    # 建连超时（毫秒）
+    connect-timeout-ms: 5000
+    # 命令级超时（毫秒）
+    command-timeout-ms: 3000
+    # 集群拓扑刷新周期（秒）
+    topology-refresh-period-seconds: 60
+
+  limits:
+    # 容器元素数超此值即拒绝无界全量请求
+    large-key-threshold: 5000
+    # String/单字段值超此字节数即截断预览
+    max-value-bytes: 1048576
+    # SCAN 单页 count 上限
+    max-scan-count: 1000
+    # ZSet pageSize 上限
+    max-zset-page-size: 100
+    # LRANGE 区间长度上限
+    max-list-range: 5000
+
+  dashboard:
+    # overview 缓存 TTL（秒）
+    cache-ttl-seconds: 5
+    # 趋势采样间隔（毫秒）
+    sample-interval-ms: 5000
+    # 趋势环形缓冲容量（采样点数）
+    sample-buffer-size: 60
+
+  # 操作日志（key_history 表）：记录经本平台执行的 key 写/删操作
+  history:
+    # value_preview 截断上限（字节），value_bytes 仍记原始长度
+    preview-bytes: 1024
+    # 记录保留天数，过期清理任务删除更早的行
+    retention-days: 30
+    # 查询接口 pageSize 上限
+    max-page-size: 200
+    # 过期清理周期（毫秒，整数值直接进 fixedRateString）
+    purge-interval-ms: 86400000
+
+  # 实时数据检索：SCAN + 值包含匹配（对当前存活键空间）
+  search:
+    # 单请求最多扫描的 key 数（预算封顶），超限返回部分结果
+    max-keys-per-request: 2000
+    # 容器类型每 key 最多检查的元素数
+    max-elements-per-key: 100
+    # 单次返回的最大命中条数
+    max-page-size: 200
+
+logging:
+  level:
+    root: INFO
+    com.example.redisadmin: INFO

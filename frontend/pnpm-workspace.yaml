@@ -1,0 +1,4 @@
+# esbuild 构建脚本白名单：pnpm 12 不再读取 package.json 的 pnpm 字段，
+# 构建许可统一在此声明（与 kafkaVisual5 同款经验）。
+allowBuilds:
+  esbuild: true
