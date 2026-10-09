@@ -2,7 +2,7 @@
 //!
 //! 职责:
 //! 1. 打包态:从 resources 拉起后端 sidecar(`runtime/bin/java -jar app.jar
-//!    --server.port=0 --announce-port --app.db-path=<OS app-data>`),
+//!    --server.port=0 --announce-port --app.db-path=<OS app-data>/app.db`),
 //!    扫描 stdout 找 `PORT=<port>` 握手行,经 `backend_port` command 暴露给前端;
 //! 2. 开发态(tauri dev 不打 resources)或拉起失败:state 端口为 None,
 //!    前端轮询超时后保持 `'/api'` 走 vite proxy → 8080,开发工作流不变;
@@ -196,8 +196,13 @@ fn spawn_backend(app: &AppHandle) -> Result<(), tauri::Error> {
     }
 
     // OS app-data 目录(由 identifier com.redisviz.frontend 决定),与 AppPaths 约定对接。
-    let db_dir = app.path().app_data_dir()?;
-    let db_arg = format!("--app.db-path={}", db_dir.display());
+    // 契约:--app.db-path 期望**数据库文件路径**(AppPaths 直接将其用作 db 文件,
+    // 密钥文件为同目录 app.key),因此必须传 <app-data>/app.db。
+    // 曾因误传目录本身,sqlite 报 SQLITE_CANTOPEN_ISDIR 启动失败 —— 该目录先被
+    // backend.log 写入逻辑创建,必定存在,所以「目录当文件打开」必炸。
+    // to_plain_path 同样剥 verbatim 前缀,避免 sqlite-jdbc/JVM 对 \\?\ 路径的兼容风险。
+    let db_dir = to_plain_path(&app.path().app_data_dir()?);
+    let db_arg = format!("--app.db-path={}", db_dir.join("app.db").display());
     log_line(
         &log,
         "tauri",

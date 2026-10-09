@@ -7,6 +7,7 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -36,6 +37,13 @@ public class AppPaths {
         Path path = configured != null
                 ? Paths.get(configured).toAbsolutePath().normalize()
                 : Paths.get("data").toAbsolutePath().normalize().resolve("app.db");
+
+        // 容错:调用方误传目录(如 OS app-data 目录)时,按数据目录对待,取其下 app.db。
+        // 契约上 db-path 是数据库文件路径;目录容错仅为兜底,打 WARN 提示调用方纠正。
+        if (Files.isDirectory(path)) {
+            log.warn("app.db-path 指向的是目录({}),按数据目录处理,使用其下 app.db", path);
+            path = path.resolve("app.db");
+        }
 
         this.databasePath = path;
         this.keyFilePath = path.resolveSibling("app.key");
