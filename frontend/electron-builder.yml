@@ -68,7 +68,8 @@ mac:
 
 linux:
   category: Development
-  maintainer: redis-visualizer
+  # deb/rpm 要求 maintainer 为 "Name <email>" 格式，缺邮箱会被 fpm 拒绝
+  maintainer: Redis Visualizer <redis-visualizer@users.noreply.github.com>
   # AppImage（便携）/ deb / rpm（包管理器）/ zip（免安装版）
   target:
     - AppImage

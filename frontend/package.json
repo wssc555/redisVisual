@@ -5,6 +5,13 @@
   "type": "module",
   "packageManager": "pnpm@12.5.1",
   "main": "dist-electron/main.js",
+  "description": "Redis 可视化管理平台",
+  "homepage": "https://github.com/wssc555/redisVisual",
+  "author": {
+    "name": "Redis Visualizer",
+    "email": "redis-visualizer@users.noreply.github.com"
+  },
+  "license": "MIT",
   "scripts": {
     "dev": "vite",
     "typecheck": "vue-tsc --noEmit && tsc -p electron/tsconfig.json --noEmit",
