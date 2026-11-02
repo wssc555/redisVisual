@@ -91,7 +91,7 @@ jobs:
       - name: Assemble sidecar resources (app.jar + runtime)
         run: |
           mkdir -p frontend/resources
-          cp target/redis-admin-backend-*.jar frontend/resources/app.jar
+          cp target/redisVisual-*.jar frontend/resources/app.jar
           rm -rf frontend/resources/runtime
           cp -r jlink-runtime frontend/resources/runtime
           chmod +x frontend/resources/runtime/bin/java

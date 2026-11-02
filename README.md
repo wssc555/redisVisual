@@ -58,7 +58,7 @@ redisVisual-backend/
 
 ```bash
 mvn clean package -DskipTests
-java -jar target/redis-admin-backend-1.0.0.jar     # 默认数据目录 <cwd>/data/
+java -jar target/redisVisual-1.0.0.jar     # 默认数据目录 <cwd>/data/
 ```
 
 - **数据目录**：`java -jar app.jar --app.db-path=/data/redis/app.db`（或位置参数 `/data/redis/app.db`）
