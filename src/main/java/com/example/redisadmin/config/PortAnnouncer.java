@@ -10,13 +10,14 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * 桌面(Tauri sidecar)模式端口握手。
+ * 桌面（sidecar）模式端口握手。
  *
- * <p><b>协议</b>:Rust 父进程以 {@code --server.port=0 --announce-port} 拉起后端;
+ * <p><b>协议</b>:桌面壳父进程以 {@code --server.port=0 --announce-port} 拉起后端;
  * 内嵌 web server 绑定端口后往 <b>stdout</b> 打印一行 {@code PORT=<port>} 并立即 flush。
+ * 该协议与壳实现无关（纯 stdout 行协议），Electron / Tauri / 任意进程宿主通用。
  *
  * <p>Spring 的 banner 与启动日志会先于本行出现在 stdout,
- * 因此 Rust 侧<b>逐行扫描</b> stdout 找 {@code PORT=} 前缀,兼容日志噪声。
+ * 因此壳侧<b>逐行扫描</b> stdout 找 {@code PORT=} 前缀,兼容日志噪声。
  *
  * <p><b>开关</b>:仅当命令行含 {@code --announce-port}(无值或值不为 {@code false})时输出;
  * 裸跑 / 开发模式零输出,stdout 行为不受影响(普通 {@code java -jar} 与测试均不传该选项)。
@@ -25,7 +26,7 @@ import java.util.List;
 public class PortAnnouncer implements ApplicationListener<WebServerInitializedEvent> {
 
     /**
-     * 命令行开关名(与 Rust 侧启动参数约定一致)。
+     * 命令行开关名（与壳侧启动参数约定一致）。
      */
     static final String ANNOUNCE_FLAG = "announce-port";
 

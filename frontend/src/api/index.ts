@@ -22,7 +22,7 @@ export const applyEnvelopeInterceptors = (instance: AxiosInstance): void => {
         //（而非 AxiosResponse），调用方全部按 ApiResponse<T> 消费。
         (res): any => {
             const body = res.data as ApiResponse<unknown> | undefined
-            // 非信封响应（如 Tauri 静态资源、代理错误页）原样透传，不误判
+            // 非信封响应（如 app:// 静态资源、代理错误页）原样透传，不误判
             if (!body || typeof body !== 'object' || typeof body.code !== 'number') {
                 return body
             }
@@ -41,7 +41,9 @@ export const applyEnvelopeInterceptors = (instance: AxiosInstance): void => {
     )
 }
 
-const api = axios.create({
+// 导出实例本身：桌面握手（initApiBaseUrl）改的就是它的 baseURL，
+// 测试需要断言该副作用，故不能保持模块私有。
+export const api = axios.create({
     baseURL: '/api',
     timeout: 15000,
 })
@@ -49,13 +51,31 @@ const api = axios.create({
 applyEnvelopeInterceptors(api)
 
 /**
- * Tauri 桌面模式 baseURL 握手。
+ * 桌面壳注入的桥（preload 经 contextBridge 挂到 `globalThis.redisviz`）。
  *
- * - 浏览器 / vite dev：维持默认 '/api'（vite proxy → 8080），返回 [];
- * - Tauri：轮询 `invoke('backend_port')` 拿 sidecar 实际监听端口，
- *   把 baseURL 改指 `http://127.0.0.1:{port}/api`。
+ * 契约真相在 `frontend/electron/env.d.ts` —— 渲染进程与 Node 侧分属两套 tsconfig /
+ * 两种运行环境，跨工程 import 会把 node 类型拖进浏览器侧，故此处保留一份等价结构类型。
+ * **改那边必须同步这里。**
+ */
+export interface RedisvizBridge {
+    /** sidecar 实际监听端口；未就绪为 null */
+    backendPort(): Promise<number | null>
+
+    /** 启动期错误清单（资源缺失 / spawn 失败 / 握手前退出） */
+    startupErrors(): Promise<string[]>
+
+    /** backend.log 尾部（排障用；握手流程不依赖） */
+    readBackendLog?(): Promise<string[]>
+}
+
+/**
+ * 桌面模式 baseURL 握手。
  *
- * 必须轮询：Spring Boot 从 spawn 到监听端口需要 5–30s，启动瞬间单次 invoke
+ * - 浏览器 / vite dev：维持默认 '/api'（vite proxy → 8080），返回 []；
+ * - Electron 桌面：轮询 preload 暴露的 `globalThis.redisviz.backendPort()` 拿 sidecar
+ *   实际监听端口，把 baseURL 改指 `http://127.0.0.1:{port}/api`。
+ *
+ * 必须轮询：Spring Boot 从 spawn 到监听端口需要 5–30s，启动瞬间单次查询
  * 必然拿到 null（这正是「仪表盘空白」的根因——baseURL 永久落在 '/api'）。
  * 拿到端口立即返回 []；60s 超时说明 sidecar 起失败 —— 拉取壳侧收集的
  * startup_errors 一并返回，由调用方（main.ts）弹框展示，同时保持 '/api' 兜底挂载。
@@ -64,19 +84,15 @@ applyEnvelopeInterceptors(api)
  */
 export const initApiBaseUrl = async (): Promise<string[]> => {
     // 用 globalThis 而非 window：vitest(node 环境)下没有 window，直接访问会 ReferenceError
-    const tauri = (
-        globalThis as unknown as {
-            __TAURI_INTERNALS__?: { invoke?: (cmd: string) => Promise<unknown> }
-        }
-    ).__TAURI_INTERNALS__
-    if (!tauri || typeof tauri.invoke !== 'function') {
+    const bridge = (globalThis as unknown as { redisviz?: RedisvizBridge }).redisviz
+    if (!bridge || typeof bridge.backendPort !== 'function') {
         bootLog('浏览器/开发模式:跳过握手,走 vite proxy → 8080')
         return []
     }
     bootLog('桌面模式:开始轮询 sidecar 端口(最长 60s)')
     for (let attempt = 0; attempt < 120; attempt++) {
         try {
-            const port = Number(await tauri.invoke('backend_port'))
+            const port = Number(await bridge.backendPort())
             if (Number.isInteger(port) && port > 0 && port < 65536) {
                 api.defaults.baseURL = `http://127.0.0.1:${port}/api`
                 bootLog(`握手成功:baseURL = http://127.0.0.1:${port}/api`)
@@ -88,10 +104,10 @@ export const initApiBaseUrl = async (): Promise<string[]> => {
         await new Promise((resolve) => setTimeout(resolve, 500))
     }
     bootLog('握手超时(60s):后端服务未就绪')
-    // 60s 超时：sidecar 没起来。拉取壳侧记录的启动错误（旧版壳无此 command 时兜底空数组）
+    // 60s 超时：sidecar 没起来。拉取壳侧记录的启动错误（桥不提供该通道时兜底空数组）
     let errors: string[] = []
     try {
-        const raw = await tauri.invoke('startup_errors')
+        const raw = await bridge.startupErrors()
         if (Array.isArray(raw)) errors = raw.map(String)
     } catch {
         // 忽略，走通用文案

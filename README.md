@@ -2,7 +2,7 @@
 
 简体中文 | [English](README_EN.md)
 
-Spring Boot 3.4.6 + Lettuce 7.8.0 后端，Vue 3.5 + Element Plus 前端（可打包为 Tauri 2 桌面应用）。
+Spring Boot 3.4.6 + Lettuce 7.8.0 后端，Vue 3.5 + Element Plus 前端（可打包为 Electron 桌面应用）。
 支持单机 / 集群 / 哨兵连接管理、五大类型 CRUD、只读监控、跨实例仪表盘、实时检索与操作日志。
 
 > ⚠️ 本服务持有全部已配置 Redis 实例的读写权限， **仅限受控内网部署**；暴露公网前必须自行加网关鉴权。
@@ -13,7 +13,7 @@ Spring Boot 3.4.6 + Lettuce 7.8.0 后端，Vue 3.5 + Element Plus 前端（可�
 flowchart LR
     subgraph FE["前端 frontend/"]
         WEB["Vue 3.5 + Element Plus + echarts<br/>浏览器（Vite 5173 / 静态托管）"]
-        TAURI["Tauri 2 桌面壳<br/>sidecar 拉起后端 · PORT= 握手"]
+        SHELL["Electron 桌面壳<br/>sidecar 拉起后端 · PORT= 握手"]
     end
     subgraph BE["后端 src/main/java/com/example/redisadmin/"]
         CT["controller ×11（48 端点）<br/>恒 HTTP 200 + {code, msg, data}"]
@@ -23,7 +23,7 @@ flowchart LR
         SEC["CryptoService AES-GCM"]
     end
     WEB --> CT
-    TAURI --> CT
+    SHELL --> CT
     CT --> SV
     SV --> CM
     SV --> ST
@@ -33,7 +33,7 @@ flowchart LR
 ```
 
 技术栈：JDK 21 · Spring Boot 3.4.6 · Lettuce 7.8.0.RELEASE（钉版）· Netty 4.2.17.Final（钉版）· Caffeine 3.1.8 ·
-前端 Vue 3.5 / TS 5.9 / Vite 6 / Element Plus 2.14 / vue-i18n 11 / echarts 5（pnpm 12，vitest 45 用例）· 桌面壳 Tauri 2。
+前端 Vue 3.5 / TS 5.9 / Vite 6 / Element Plus 2.14 / vue-i18n 11 / echarts 5（pnpm 12，vitest 50 用例）· 桌面壳 Electron。
 
 ```
 redisVisual-backend/
@@ -47,8 +47,8 @@ redisVisual-backend/
 │   ├── web/          @ProfileId 路径解析器（统一鉴权注入点）
 │   ├── model/        13 DTO + 29 VO
 │   └── exception/    ErrorCode（5 位）/ BizException / GlobalExceptionHandler
-├── frontend/         Vue 3 前端（pnpm）+ src-tauri/ 桌面壳
-├── docs/             backend-design.md（接口契约权威口径）/ system-design.md / frontend-design.md
+├── frontend/         Vue 3 前端（pnpm）+ electron/ 桌面壳
+├── docs/             backend-design.md（接口契约权威口径）/ system-design.md / frontend-design.md / electron 迁移评估
 └── data/             app.db + app.key（运行时生成，勿提交）
 ```
 
@@ -58,7 +58,7 @@ redisVisual-backend/
 
 ```bash
 mvn clean package -DskipTests
-java -jar target/redisVisual-1.0.0.jar     # 默认数据目录 <cwd>/data/
+java -jar target/redis-admin-backend-1.0.0.jar     # 默认数据目录 <cwd>/data/
 ```
 
 - **数据目录**：`java -jar app.jar --app.db-path=/data/redis/app.db`（或位置参数 `/data/redis/app.db`）
@@ -73,20 +73,21 @@ java -jar target/redisVisual-1.0.0.jar     # 默认数据目录 <cwd>/data/
 cd frontend
 pnpm install
 pnpm dev      # http://localhost:5173，/api 代理到 8080
-pnpm build    # vue-tsc 类型检查 + vite 构建
+pnpm build    # 类型检查（renderer + electron）+ vite 构建
 pnpm test     # vitest 单测
 ```
 
-### 桌面应用（Tauri 2）
+### 桌面应用（Electron）
 
 ```bash
 cd frontend
-pnpm tauri dev      # 开发：Rust 壳 + 后端 sidecar
-pnpm tauri build    # 打包（resources/app.jar 与 jlink runtime 由 CI 注入）
+pnpm electron:dev   # 编译 electron/ → dist-electron/ 并启动壳（自动拉起或复用 vite；渲染层走 vite proxy）
+pnpm electron:build # 打包（resources/app.jar 与 jlink runtime 由 CI 注入）
 ```
 
 桌面握手：后端以 `--announce-port` 启动时，web server 就绪后向 stdout 打印 `PORT=<n>`（`PortAnnouncer`），
-Rust 壳逐行扫描该行并通知前端切换 baseURL；裸跑 `java -jar` 时零输出、行为不变。
+壳（Electron 主进程）逐行扫描该行并经 preload 桥（`globalThis.redisviz.backendPort`）通知前端切换 baseURL；
+裸跑 `java -jar` 时零输出、行为不变。壳与后端靠这条 **stdout 行协议**解耦，换任意壳实现都不用动后端。
 
 ### API
 
@@ -113,3 +114,4 @@ Rust 壳逐行扫描该行并通知前端切换 baseURL；裸跑 `java -jar` 时
 | `docs/backend-design.md`             | 接口契约唯一权威口径（48 端点逐项定义）  |
 | `docs/system-design.md`              | 内部机制与实现取舍（含踩坑与技术债清单） |
 | `docs/2026-10-06-frontend-design.md` | 前端设计（v3：契约基准 + 落地状态）      |
+| `docs/2026-10-20-electron-migration-evaluation.md` | Electron 桌面壳设计（electron/ 源码 § 引用的出处） |

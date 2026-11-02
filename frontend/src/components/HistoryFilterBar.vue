@@ -139,8 +139,7 @@ watch(timeRange, syncRange)
 
 /**
  * 时间范围非法（start > end）：后端 40001，前端先拦。
- * 直接读 props.filters —— 此前误写成 `filters.startTime`（filters 是 ComputedRef，
- * 该表达式恒 undefined），整段成了永不触发的死代码。
+ * 直接读 props.filters（filters 是 ComputedRef，`filters.startTime` 恒 undefined）。
  */
 const timeInvalid = computed(() => {
   const {startTime, endTime} = props.filters

@@ -1,0 +1,163 @@
+# macOS（Apple Silicon）安装包构建（dmg）。
+#
+# 只出 arm64：与 jlink runtime 的构建架构一致（CI runner 即 arm64），
+# 覆盖 Apple Silicon 全系（2020 年后的 Mac）。
+name: Electron Build (macOS)
+
+on:
+  workflow_dispatch:
+  push:
+    tags: [ 'v*' ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write # tag 触发时向 release 上传文件
+  actions: write # 删除上一次运行的同名 artifact（滚动覆盖）
+
+env:
+  # 未签名:关闭证书自动发现，否则 electron-builder 会在钥匙串里找身份并告警/卡顿
+  CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+jobs:
+  build-electron-macos:
+    # 原生 arm64 runner：产物即 arm64，无需交叉编译（Electron 二进制按 runner 架构下载）
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Delete previous artifact (rolling overwrite)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ids=$(gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100" --paginate \
+            -q '.artifacts[] | select(.name == "redis-visualizer-macos-arm64" and .expired == false) | .id')
+          if [ -z "$ids" ]; then
+            echo "no previous artifact, nothing to delete"
+          else
+            for id in $ids; do
+              gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id"
+              echo "deleted artifact $id"
+            done
+          fi
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: 'maven'
+
+      # 版本由 frontend/package.json 的 packageManager 字段（pnpm@12.5.1）决定
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      # -Dmaven.test.skip=true 连测试代码一并跳过编译（打包产物不需要；-DskipTests 仍会编译 *IT.java）
+      - name: Build backend fat jar
+        run: mvn -B -T 1C -Dmaven.test.skip=true package
+
+      # 模块集说明(宁多勿缺,缺模块只会在用户机器运行时炸):
+      #   java.se            全部 SE 平台模块(Spring/lettuce/JDBC/三种 JDBC 驱动)
+      #   jdk.unsupported    sun.misc.Unsafe —— lettuce 底层 netty 硬依赖,缺了直接 NoClassDefFoundError
+      #   jdk.crypto.ec      TLS 椭圆曲线(Redis TLS 连接)
+      #   jdk.crypto.cryptoki SunPKCS11(部分内网 NSS/硬件 token 场景)
+      #   jdk.charsets       GBK 等扩展字符集(JDK9+ 不在 java.base)
+      #   jdk.localedata     中文日期/数字格式化
+      #   jdk.zipfs          zip 文件系统(部分库按 zip 打开嵌套 jar / 归档)
+      # 不加 jdk.crypto.mscapi:Windows-only 模块在 macOS 的 jlink 里不存在,会直接报错。
+      - name: Build jlink runtime
+        run: |
+          rm -rf jlink-runtime
+          jlink --no-header-files --no-man-pages --strip-debug --compress=zip-6 \
+            --add-modules java.se,jdk.unsupported,jdk.zipfs,jdk.charsets,jdk.localedata,jdk.crypto.ec,jdk.crypto.cryptoki \
+            --output jlink-runtime
+          head -3 jlink-runtime/release
+
+      # sidecar 布局 = <resourcesPath>/{app.jar, runtime/}：electron-builder 的
+      # extraResources（from: resources/...，相对 frontend）把这两个产物按原名放进 process.resourcesPath。
+      # extraResources 在 Unix 平台偶发丢失可执行位 → spawn 报 EACCES，这里显式补齐并断言
+      - name: Assemble sidecar resources (app.jar + runtime)
+        run: |
+          mkdir -p frontend/resources
+          cp target/redis-admin-backend-*.jar frontend/resources/app.jar
+          rm -rf frontend/resources/runtime
+          cp -r jlink-runtime frontend/resources/runtime
+          chmod +x frontend/resources/runtime/bin/java
+          test -f frontend/resources/app.jar
+          test -x frontend/resources/runtime/bin/java
+          ls -la frontend/resources
+
+      # electron-builder 每次运行都要从网络下载并解压 Electron 发行包（每平台 100MB+）。
+      # 缓存两个目录：~/.cache/electron（npm electron postinstall 与 electron-builder 共用同一缓存根）
+      # 和 ~/.cache/electron-builder（打包工具）。
+      # 必须放在 pnpm install 之前——electron 包的 postinstall 下载也要命中这份缓存。
+      - name: Cache Electron binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: electron-${{ runner.os }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
+          restore-keys: |
+            electron-${{ runner.os }}-
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      # pnpm build = vue-tsc --noEmit + tsc -p electron/tsconfig.json --noEmit + vite build
+      - name: Build renderer and electron bundles
+        working-directory: frontend
+        run: pnpm build
+
+      - name: Compile Electron main/preload
+        working-directory: frontend
+        run: pnpm electron:compile
+
+      # 防呆：electron-builder 直接吃 dist/，缺产物时会打出一个「白屏安装包」，故前置断言。
+      - name: Verify dist artifacts
+        run: |
+          test -f frontend/dist/index.html
+          test -f frontend/dist-electron/main.js
+          test -f frontend/dist-electron/preload.js
+
+      - name: Package with electron-builder
+        working-directory: frontend
+        run: pnpm exec electron-builder --mac --arm64 --publish never
+
+      # 打包后再次确认 .app 包内的 java 可执行位（extraResources 复制路径的最后一道保险）
+      - name: Verify java executable bit inside the app bundle
+        run: |
+          test -x "frontend/release/mac-arm64/Redis Visualizer.app/Contents/Resources/runtime/bin/java"
+
+      # 只在手动触发时上传 artifact（tag 构建走 Release，避免重复占用配额）
+      - name: Upload artifacts (workflow_dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: redis-visualizer-macos-arm64
+          path: |
+            frontend/release/*.dmg
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish release (tag push only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false # 全自动：直接发布，无需手动点 Publish
+          generate_release_notes: true # 自动汇总自上个 tag 以来的变更作为发布说明
+          files: |
+            frontend/release/*.dmg

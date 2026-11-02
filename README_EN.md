@@ -2,7 +2,7 @@
 
 English | [简体中文](README.md)
 
-A Spring Boot 3.4.6 + Lettuce 7.8.0 backend with a Vue 3.5 + Element Plus frontend (packaged as a Tauri 2 desktop
+A Spring Boot 3.4.6 + Lettuce 7.8.0 backend with a Vue 3.5 + Element Plus frontend (packaged as an Electron desktop
 app). Connection management for standalone / cluster / sentinel, CRUD for the five core data types, read-only server
 monitoring, a cross-instance dashboard, live key-space search, and operation audit logging.
 
@@ -15,7 +15,7 @@ monitoring, a cross-instance dashboard, live key-space search, and operation aud
 flowchart LR
     subgraph FE["Frontend frontend/"]
         WEB["Vue 3.5 + Element Plus + echarts<br/>browser (Vite 5173 / static hosting)"]
-        TAURI["Tauri 2 desktop shell<br/>boots backend sidecar · PORT= handshake"]
+        SHELL["Electron desktop shell<br/>boots backend sidecar · PORT= handshake"]
     end
     subgraph BE["Backend src/main/java/com/example/redisadmin/"]
         CT["controller ×11 (48 endpoints)<br/>always HTTP 200 + {code, msg, data}"]
@@ -25,7 +25,7 @@ flowchart LR
         SEC["CryptoService AES-GCM"]
     end
     WEB --> CT
-    TAURI --> CT
+    SHELL --> CT
     CT --> SV
     SV --> CM
     SV --> ST
@@ -35,7 +35,7 @@ flowchart LR
 ```
 
 Tech stack: JDK 21 · Spring Boot 3.4.6 · Lettuce 7.8.0.RELEASE (pinned) · Netty 4.2.17.Final (pinned) · Caffeine 3.1.8 ·
-frontend Vue 3.5 / TS 5.9 / Vite 6 / Element Plus 2.14 / vue-i18n 11 / echarts 5 (pnpm 12, 45 vitest cases) · Tauri 2
+frontend Vue 3.5 / TS 5.9 / Vite 6 / Element Plus 2.14 / vue-i18n 11 / echarts 5 (pnpm 12, 50 vitest cases) · Electron
 shell.
 
 ```
@@ -50,8 +50,8 @@ redisVisual-backend/
 │   ├── web/          @ProfileId resolver (unified auth injection point)
 │   ├── model/        13 DTOs + 29 VOs
 │   └── exception/    ErrorCode (5-digit) / BizException / GlobalExceptionHandler
-├── frontend/         Vue 3 frontend (pnpm) + src-tauri/ desktop shell
-├── docs/             backend-design.md (authoritative API contract) / system-design.md / frontend-design.md
+├── frontend/         Vue 3 frontend (pnpm) + electron/ desktop shell
+├── docs/             backend-design.md (authoritative API contract) / system-design.md / frontend-design.md / electron migration evaluation
 └── data/             app.db + app.key (generated at runtime, do not commit)
 ```
 
@@ -61,7 +61,7 @@ redisVisual-backend/
 
 ```bash
 mvn clean package -DskipTests
-java -jar target/redisVisual-1.0.0.jar     # default data dir <cwd>/data/
+java -jar target/redis-admin-backend-1.0.0.jar     # default data dir <cwd>/data/
 ```
 
 - **Data directory**: `java -jar app.jar --app.db-path=/data/redis/app.db` (or positional arg `/data/redis/app.db`)
@@ -77,21 +77,23 @@ java -jar target/redisVisual-1.0.0.jar     # default data dir <cwd>/data/
 cd frontend
 pnpm install
 pnpm dev      # http://localhost:5173, /api proxied to 8080
-pnpm build    # vue-tsc type check + vite build
+pnpm build    # type check (renderer + electron) + vite build
 pnpm test     # vitest unit tests
 ```
 
-### Desktop App (Tauri 2)
+### Desktop App (Electron)
 
 ```bash
 cd frontend
-pnpm tauri dev      # dev: Rust shell + backend sidecar
-pnpm tauri build    # bundle (resources/app.jar and the jlink runtime are injected by CI)
+pnpm electron:dev   # compile electron/ -> dist-electron/ and launch the shell (starts or reuses vite; renderer goes through the vite proxy)
+pnpm electron:build # bundle (resources/app.jar and the jlink runtime are injected by CI)
 ```
 
 Handshake: when started with `--announce-port`, the backend prints `PORT=<n>` to stdout once the web server is up
-(`PortAnnouncer`); the Rust shell scans for that line and switches the frontend baseURL. A plain `java -jar` run
-produces no output and behaves unchanged.
+(`PortAnnouncer`); the shell's main process scans for that line and hands the port to the renderer over the preload
+bridge (`globalThis.redisviz.backendPort`), which then switches the baseURL. A plain `java -jar` run produces no output
+and behaves unchanged. The shell and the backend are decoupled by this **stdout line protocol**, so swapping shells
+never touches the backend.
 
 ### API
 
@@ -118,3 +120,4 @@ retention, etc. For every key's default and semantics see `docs/backend-design.m
 | `docs/backend-design.md`             | single authoritative API contract (all 48 endpoints)      |
 | `docs/system-design.md`              | internals, trade-offs, pitfalls & tech-debt list          |
 | `docs/2026-10-06-frontend-design.md` | frontend design (v3: contract baseline + delivered state) |
+| `docs/2026-10-20-electron-migration-evaluation.md` | Electron desktop shell design (source of the § references in electron/) |

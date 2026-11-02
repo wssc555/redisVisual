@@ -3,6 +3,15 @@
 <head>
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <!--
+      内容安全策略（单一口径：随 index.html 走，dev 与打包态同一份）。
+      迁移自 Tauri 的 app.security.csp，并剔除 Tauri v2 IPC 专用的
+      `ipc:` / `http://ipc.localhost`（Electron 下无意义）；
+      connect-src 除 'self'(= app://localhost) 外只放本地回环：sidecar 的
+      `http://127.0.0.1:{port}/api` 与 vite HMR 的 ws。
+    -->
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; object-src 'none'; base-uri 'self'"/>
     <title>Redis Visualizer</title>
     <style>
         /*

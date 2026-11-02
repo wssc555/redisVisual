@@ -18,6 +18,10 @@ pnpm test       # vitest（node 环境）
 
 > 后端需另行启动（`mvn spring-boot:run`，监听 8080）。前端不含后端进程。
 
+桌面壳开发工作流：`pnpm electron:dev` 一条命令即可 —— 先编译主进程 TS，再自动拉起 vite 与 Electron 窗口
+（若 5173 已有 vite 在跑则复用，不重复启动）；关闭窗口或 Ctrl+C 时两者一起回收。
+也可以手动 `pnpm dev` 后另开终端 `pnpm electron:dev`，行为一致。
+
 ---
 
 ## 目录结构
@@ -126,11 +130,21 @@ api.interceptors.response.use((res) => {
 
 ---
 
-## 桌面化预留
+## 桌面壳（Electron）
 
-`initApiBaseUrl()` 已实现 Tauri 握手（`__TAURI_INTERNALS__` 探测 → 轮询 `invoke('backend_port')` → baseURL 指向
-`http://127.0.0.1:{port}/api`，60s 超时拉 `startup_errors`）。本期 **不建** `src-tauri/` 工程；后端 CORS 白名单已含
-`tauri.localhost`。
+`initApiBaseUrl()` 负责任务：探测 `globalThis.redisviz`（preload 经 contextBridge 暴露）→ 轮询 `backendPort()`
+→ baseURL 指向 `http://127.0.0.1:{port}/api`，60s 超时拉 `startupErrors()` 弹框。浏览器 / vite dev 下探测不到桥，
+保持 `'/api'` 走 vite proxy，开发工作流不变。
+
+- 壳源码在 `electron/`（`main.ts` 拉 sidecar + 握手 + 单实例 + 回收 + `backend.log`；`preload.ts` 只暴露三个只读通道）。
+- Node 侧 **独立编译**：`pnpm electron:compile` → `dist-electron/`（`pnpm build` 只出 renderer 的 `dist/`）。
+  `dist-electron/package.json` 标记 `type: commonjs` —— sandbox 化的 preload 不支持 ESM。
+- `pnpm typecheck` 同时覆盖两套 tsconfig（renderer 的 `vue-tsc` + `electron/tsconfig.json` 的 `tsc`），漏掉后者会
+  让壳代码完全脱离类型检查面。
+- 打包态加载 `app://localhost`（`protocol.registerSchemesAsPrivileged` 的 standard + secure 协议），origin 稳定，
+  后端 CORS 白名单只认这一条 —— 不用 `file://`（origin 会退化成 `null`）。
+- CSP 在 `index.html` 的 meta 里（dev / 打包同一份），已剔除 Tauri IPC 专用的 `ipc:` 两项。
+- `pnpm-workspace.yaml` 的 `allowBuilds` 必须含 `electron: true`，否则二进制不下载、dev/build/打包全线失败。
 
 ---
 

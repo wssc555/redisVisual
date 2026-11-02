@@ -1,6 +1,15 @@
-import {describe, expect, it} from 'vitest'
+import {afterEach, describe, expect, it, vi} from 'vitest'
 import axios from 'axios'
-import {ApiError, applyEnvelopeInterceptors, c, encodeSegment, ErrorCode, HISTORY_OPERATIONS,} from '../index'
+import {
+    api,
+    ApiError,
+    applyEnvelopeInterceptors,
+    c,
+    encodeSegment,
+    ErrorCode,
+    HISTORY_OPERATIONS,
+    initApiBaseUrl,
+} from '../index'
 
 /**
  * api 层契约断言（node 环境，无需挂载组件）。
@@ -51,8 +60,8 @@ describe('恒 200 信封拦截器', () => {
      * 驱动**真实拦截器**：测试实例安装的是生产代码导出的 `applyEnvelopeInterceptors`
      * （与真实 `api` 单例同源），仅把 adapter 换成可编排的 stub。
      *
-     * 这条纪律来自一次评审教训：此前的测试把拦截器逻辑**逐行复刻**进测试文件，
-     * 改坏真源码时照样全绿 —— 复刻实现的测试只能测到测试文件自己。
+     * 纪律：不把拦截器逻辑**复刻**进测试文件 —— 复刻实现的测试只能测到测试文件自己，
+     * 改坏真源码时照样全绿。
      */
     const buildApi = (handler: (config: unknown) => Promise<unknown>) => {
         const inst = axios.create({baseURL: '/api', timeout: 1500})
@@ -152,5 +161,87 @@ describe('操作日志枚举', () => {
         expect(HISTORY_OPERATIONS).toContain('SET')
         expect(HISTORY_OPERATIONS).toContain('DEL')
         expect(HISTORY_OPERATIONS).toContain('ZINCRBY')
+    })
+})
+
+/**
+ * 桌面壳握手（`globalThis.redisviz`）= Electron preload 暴露的三通道。
+ *
+ * 它是「桌面态仪表盘空白」的唯一根因所在，值得用 3 条用例钉死：
+ * 无桥 → '/api'；有桥 → 改指 127.0.0.1:{port}；超时 → 回传 startup_errors。
+ */
+describe('initApiBaseUrl 桌面桥探测', () => {
+    const bridgeKey = 'redisviz'
+
+    const setBridge = (value: unknown): void => {
+        ;(globalThis as Record<string, unknown>)[bridgeKey] = value
+    }
+
+    afterEach(() => {
+        delete (globalThis as Record<string, unknown>)[bridgeKey]
+        api.defaults.baseURL = '/api'
+    })
+
+    it('无桥（浏览器 / vite dev）保持 /api，不返回错误', async () => {
+        await expect(initApiBaseUrl()).resolves.toEqual([])
+        expect(api.defaults.baseURL).toBe('/api')
+    })
+
+    it('桥返回端口后把 baseURL 指向 sidecar', async () => {
+        setBridge({
+            backendPort: async () => 45678,
+            startupErrors: async () => [],
+        })
+        await expect(initApiBaseUrl()).resolves.toEqual([])
+        expect(api.defaults.baseURL).toBe('http://127.0.0.1:45678/api')
+    })
+
+    it('端口非法值不算握手成功（0 / 超范围 / null 全部继续轮询）', async () => {
+        let attempt = 0
+        setBridge({
+            backendPort: async () => {
+                attempt += 1
+                // 前两次给非法值，第三次给合法端口 —— 证明判据是「整数且在 1..65535」
+                return attempt === 1 ? 0 : attempt === 2 ? 70000 : 12345
+            },
+            startupErrors: async () => [],
+        })
+        await expect(initApiBaseUrl()).resolves.toEqual([])
+        expect(attempt).toBe(3)
+        expect(api.defaults.baseURL).toBe('http://127.0.0.1:12345/api')
+    })
+
+    it('60s 超时后回传壳侧 startup_errors（fake timers 免等真实 60s）', async () => {
+        vi.useFakeTimers()
+        try {
+            setBridge({
+                backendPort: async () => null,
+                startupErrors: async () => ['后端资源缺失：安装包不完整'],
+            })
+            const pending = initApiBaseUrl()
+            // 120 次 × 500ms = 60s，advanceTimersByTimeAsync 会逐个推进定时器并冲刷微任务
+            await vi.advanceTimersByTimeAsync(120 * 500)
+            await expect(pending).resolves.toEqual(['后端资源缺失：安装包不完整'])
+            expect(api.defaults.baseURL).toBe('/api')
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    it('壳侧未记录错误时兜底为一条非空提示文案', async () => {
+        vi.useFakeTimers()
+        try {
+            setBridge({
+                backendPort: async () => null,
+                startupErrors: async () => [],
+            })
+            const pending = initApiBaseUrl()
+            await vi.advanceTimersByTimeAsync(120 * 500)
+            const errors = await pending
+            expect(errors).toHaveLength(1)
+            expect(errors[0].length).toBeGreaterThan(0)
+        } finally {
+            vi.useRealTimers()
+        }
     })
 })

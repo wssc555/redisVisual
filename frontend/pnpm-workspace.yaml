@@ -1,4 +1,11 @@
-# esbuild 构建脚本白名单：pnpm 12 不再读取 package.json 的 pnpm 字段，
-# 构建许可统一在此声明（与 kafkaVisual5 同款经验）。
+# pnpm 12 不再读取 package.json 的 pnpm 字段，构建许可统一在此声明（与 kafkaVisual5 同款经验）。
+# 未声明的构建脚本会被视为错误（ERR_PNPM_IGNORED_BUILDS），故每个带 postinstall 的依赖都要显式表态。
+#
+# esbuild               vite 的构建内核。
+# electron              Electron 45 已无 postinstall（二进制在首次 require 时惰性下载）；
+#                       声明 true 以防 pnpm 12 把未声明的构建脚本当错误。
+# electron-winstaller   electron-builder 的 Squirrel/MSI 工具链依赖（本项目只出 nsis+msi，但依赖树里必然会装）。
 allowBuilds:
   esbuild: true
+  electron: true
+  electron-winstaller: true
