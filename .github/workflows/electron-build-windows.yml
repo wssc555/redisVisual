@@ -142,12 +142,15 @@ jobs:
         run: pnpm exec electron-builder --win --publish never
 
       # 打包后冒烟断言：确认 extraResources 没在拷贝时丢文件（mac/linux 有可执行位校验，Windows 无执行位概念，用存在性兜底）
+      # 并对每种分发格式逐一断言（exe / msi），缺任一格式立即失败，杜绝「artifact 只含单一文件」的哑输出
       - name: Verify sidecar resources inside win-unpacked
         shell: bash
         run: |
           test -f frontend/release/win-unpacked/resources/app.jar
           test -f frontend/release/win-unpacked/resources/runtime/bin/java.exe
           ls frontend/release/win-unpacked/resources
+          ls frontend/release/*.exe >/dev/null
+          ls frontend/release/*.msi >/dev/null
 
       # 免安装绿色版：直接打包 win-unpacked（含 exe / resources / 全部 DLL 与 locales），
       # resources/ 内已是 resources/app.jar + resources/runtime/，解压后双击 exe 即可运行。
@@ -159,6 +162,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path portable/RedisVisualizer | Out-Null
           Copy-Item -Recurse frontend/release/win-unpacked/* portable/RedisVisualizer
           tar -a -c -f redis-visualizer-windows-portable.zip portable
+          if (-not (Test-Path redis-visualizer-windows-portable.zip)) { throw 'portable zip missing' }
           Get-ChildItem redis-visualizer-windows-portable.zip | Select-Object FullName, Length
 
       # 只在手动触发时上传 artifact（tag 构建走 Release，避免重复占用配额）

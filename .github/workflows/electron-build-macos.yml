@@ -137,10 +137,12 @@ jobs:
         working-directory: frontend
         run: pnpm exec electron-builder --mac --arm64 --publish never
 
-      # 打包后再次确认 .app 包内的 java 可执行位（extraResources 复制路径的最后一道保险）
-      - name: Verify java executable bit inside the app bundle
+      # 打包后断言：.app 内 java 可执行位（extraResources 复制的最后一道保险）+ dmg / zip 存在性检查
+      - name: Verify package outputs (dmg / zip)
         run: |
           test -x "frontend/release/mac-arm64/Redis Visualizer.app/Contents/Resources/runtime/bin/java"
+          ls frontend/release/*.dmg >/dev/null
+          ls frontend/release/*.zip >/dev/null
 
       # 只在手动触发时上传 artifact（tag 构建走 Release，避免重复占用配额）
       - name: Upload artifacts (workflow_dispatch only)
@@ -150,6 +152,7 @@ jobs:
           name: redis-visualizer-macos-arm64
           path: |
             frontend/release/*.dmg
+            frontend/release/*.zip
           if-no-files-found: error
           retention-days: 14
 
@@ -161,3 +164,4 @@ jobs:
           generate_release_notes: true # 自动汇总自上个 tag 以来的变更作为发布说明
           files: |
             frontend/release/*.dmg
+            frontend/release/*.zip

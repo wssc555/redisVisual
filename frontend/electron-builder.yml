@@ -57,15 +57,21 @@ nsis:
 
 mac:
   category: public.app-category.developer-tools
+  # dmg（标准分发）+ zip（免安装版）；只出 arm64，与 jlink runtime 架构一致
   target:
     - target: dmg
+      arch:
+        - arm64
+    - target: zip
       arch:
         - arm64
 
 linux:
   category: Development
   maintainer: redis-visualizer
+  # AppImage（便携）/ deb / rpm（包管理器）/ zip（免安装版）
   target:
     - AppImage
     - deb
     - rpm
+    - zip
